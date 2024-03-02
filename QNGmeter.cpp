@@ -59,7 +59,7 @@ int main()
 		system("cls");
 	#elif __linux
 		// clear screen
-		cout << "\E[?25l\E[H\E[2J";
+		// cout << "\E[?25l\E[H\E[2J";
 		// Signal handler to catch CTRL-C in terminal
 		signal(SIGINT, (__sighandler_t)&sigintevent);
 	#elif MACOSX
@@ -126,26 +126,33 @@ int main()
 
         #pragma omp section
         {
-            // This section reads from stdin and enqueues data for testing
-        while (!doExit) {
-            shared_ptr<vector<uint32_t>> newBuffer(new vector<uint32_t>());
-            uint32_t input;
-            // Assuming the input stream provides data in a format that can be directly read into uint32_t
-            while (cin.read(reinterpret_cast<char*>(&input), sizeof(uint32_t))) {
-                newBuffer->push_back(input);
-                if (newBuffer->size() == 2048) { // Arbitrary buffer size, adjust based on your needs
+            // This section reads from stdin as binary data and enqueues it for testing
+            const size_t blockSize = 2048; // Number of uint32_t values in a block
+            const size_t bytesPerValue = sizeof(uint32_t);
+            const size_t bufferSize = blockSize * bytesPerValue; // Total bytes per block
+            char buffer[bufferSize]; // Temporary buffer to store bytes
+            while (!cin.eof() && !doExit) {
+                cin.read(buffer, bufferSize);
+                size_t bytesRead = cin.gcount();
+
+                // Convert read bytes to uint32_t and store in a vector
+                shared_ptr<vector<uint32_t>> newBuffer(new vector<uint32_t>());
+                for (size_t i = 0; i < bytesRead; i += bytesPerValue) {
+                    if (i + bytesPerValue <= bytesRead) {
+                        // Ensure we have a full 4 bytes to read
+                        uint32_t value = 0;
+                        memcpy(&value, buffer + i, bytesPerValue);
+                        newBuffer->push_back(value);
+                    }
+                }
+
+                if (!newBuffer->empty()) {
                     #pragma omp critical
                     dataQueue.push(newBuffer);
-                    newBuffer = shared_ptr<vector<uint32_t>>(new vector<uint32_t>());
                 }
             }
-            if (!newBuffer->empty()) {
-                #pragma omp critical
-                dataQueue.push(newBuffer);
-            }
-            doExit = true; // Stop if stdin closes or reaches EOF
+            doExit = true; // Exit if stdin closes or reaches EOF
         }
-    }
 
 
         #pragma omp section
@@ -352,11 +359,12 @@ int main()
                             SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
                         #elif __linux
                             // clear screen
-                            printf("\E[H");
+                            // printf("\E[H");
                         #elif MACOSX
                         #endif
 
                         timePrev = timeNow;
+                        cout.flush();
                     }
         
                     // End on an 'x' keypress
